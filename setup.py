@@ -4,14 +4,14 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="peaknet",
+    name="maxie",
     version="24.01.15",
     author="Cong Wang",
     author_email="wangimagine@gmail.com",
     description="Masked Autoencoder for X-ray Image Encoding (MAXIE)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/carbonscott/peaknet",
+    url="https://github.com/carbonscott/maxie",
     keywords = ['Foundation model', 'Masked-Autoencoder', 'X-ray Diffraction Image Encoder'],
     packages=setuptools.find_packages(),
     classifiers=[
