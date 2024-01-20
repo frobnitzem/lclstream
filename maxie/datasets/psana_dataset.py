@@ -40,28 +40,32 @@ class PsanaDataset(Dataset):
     initialized on-demand for efficient multiprocessing.
     """
 
-    def __init__(self, exp, run, mode, detector_name, img_mode, event_list = None):
+    def __init__(self, exp, run, mode, detector_name, img_mode, uses_bad_pixel_mask = False, event_list = None):
         super().__init__()
 
-        self.exp           = exp
-        self.run           = run
-        self.mode          = mode
-        self.detector_name = detector_name
-        self.img_mode      = img_mode
-        self.event_list    = event_list
+        self.exp                 = exp
+        self.run                 = run
+        self.mode                = mode
+        self.detector_name       = detector_name
+        self.img_mode            = img_mode
+        self.uses_bad_pixel_mask = uses_bad_pixel_mask
+        self.event_list          = event_list
 
         self._psana_img      = None
         self._bad_pixel_mask = None
 
 
     def _initialize_psana(self):
-        exp           = self.exp
-        run           = self.run
-        mode          = self.mode
-        detector_name = self.detector_name
+        exp                 = self.exp
+        run                 = self.run
+        mode                = self.mode
+        detector_name       = self.detector_name
+        uses_bad_pixel_mask = self.uses_bad_pixel_mask
 
         self._psana_img      = PsanaImg(exp, run, mode, detector_name)
-        self._bad_pixel_mask = self._psana_img.create_bad_pixel_mask()
+
+        if uses_bad_pixel_mask:
+            self._bad_pixel_mask = self._psana_img.create_bad_pixel_mask()
 
 
     def __len__(self):
@@ -81,11 +85,12 @@ class PsanaDataset(Dataset):
         # Fetch pixel data using psana...
         data = self._psana_img.get(event, None, self.img_mode)    # (B, H, W) or (H, W)
 
-        if data is None:
-            data = np.zeros_like(self._bad_pixel_mask, dtype = np.float32)
+        if self._bad_pixel_mask is not None:
+            if data is None:
+                data = np.zeros_like(self._bad_pixel_mask, dtype = np.float32)
 
-        # Mask out bad pixels...
-        data = apply_mask(data, self._bad_pixel_mask, mask_value = 0)
+            # Mask out bad pixels...
+            data = apply_mask(data, self._bad_pixel_mask, mask_value = 0)
 
         # Unify the data dimension...
         if data.ndim == 2: data = data[None,]    # (H, W) -> (1, H, W)
