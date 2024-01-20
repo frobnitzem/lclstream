@@ -44,7 +44,7 @@ class BenchmarkDataloader:
         dataloader_num_workers = config["dataloader_num_workers"]
 
         # Establish dataloader...
-        psana_dataset = PsanaDataset(exp, run, access_mode, detector_name, img_load_mode, events)
+        psana_dataset = PsanaDataset(exp, run, access_mode, detector_name, img_load_mode, uses_bad_pixel_mask = False, event_list = events)
         dataloader = torch.utils.data.DataLoader( psana_dataset,
                                                   shuffle     = False,
                                                   pin_memory  = True,

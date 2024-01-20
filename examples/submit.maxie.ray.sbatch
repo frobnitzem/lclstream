@@ -11,7 +11,7 @@
 #SBATCH --job-name=psana_ray
 #!SBATCH --gres=gpu:4
 #SBATCH --exclusive
-#SBATCH --nodes=10
+#SBATCH --nodes=80
 #SBATCH --ntasks-per-node=5
 #SBATCH --cpus-per-task=5
 
@@ -38,7 +38,7 @@ port=6379
 ray start --head --node-ip-address=$head_node_ip --port=$port --num-cpus=$SLURM_CPUS_PER_TASK --block &
 
 # Wait for the head node to initialize
-sleep 10
+sleep 30
 
 echo "Starting worker nodes..."
 # Start Ray on worker nodes
@@ -48,11 +48,12 @@ for node in "${nodes_array[@]:1}"; do
     srun --nodes=1 --ntasks=1 -w $node ray start --address=$head_node_ip:$port --num-cpus=$SLURM_CPUS_PER_TASK --block &
 done
 
-sleep 10
+sleep 30
 
 # Run the Python script
 echo "Running Python script..."
-python implement.maxie.psana_loader.ray.py peaknet.cxic00121_0015.yaml
+## python implement.maxie.psana_loader.ray.py peaknet.cxic00121_0015.yaml
+python implement.maxie.psana_loader.ray.py dataloading.xpptut15.yaml
 
 # Shutdown Ray on all nodes
 echo "Shutting down nodes..."
@@ -60,6 +61,9 @@ for node in "${nodes_array[@]}"; do
     echo "Shutting down Ray on $node"
     srun --nodes=1 --ntasks=1 -w $node ray stop &
 done
-wait
+
+sleep 30
 
 echo "Job completed"
+
+exit
