@@ -46,8 +46,9 @@ for node in "${nodes_array[@]:1}"; do
     echo "Starting worker node on $node"
     echo "ray start --address=$head_node_ip:$port --num-cpus=$SLURM_CPUS_PER_TASK --block"
     srun --nodes=1 --ntasks=1 -w $node ray start --address=$head_node_ip:$port --num-cpus=$SLURM_CPUS_PER_TASK --block &
-    sleep 5
 done
+
+sleep 10
 
 # Run the Python script
 echo "Running Python script..."
