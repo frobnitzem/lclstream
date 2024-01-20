@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import torch
 import time
 import yaml
@@ -120,12 +121,21 @@ if event_min is None: event_min = 0
 if event_max is None: event_max = len(psana_img.timestamps)
 
 # Split all events into event groups...
+SLURM_NNODES          = os.getenv('SLURM_NNODES')
+SLURM_NTASKS_PER_NODE = os.getenv('SLURM_NTASKS_PER_NODE')
+max_num_chunk = int(SLURM_NNODES) * int(SLURM_NTASKS_PER_NODE) if not None in (SLURM_NNODES, SLURM_NTASKS_PER_NODE) else ray_num_cpus
 events = range(event_min, event_max)
-event_groups = split_list_into_chunk(events, max_num_chunk = ray_num_cpus)
+event_groups = split_list_into_chunk(events, max_num_chunk = max_num_chunk)
 print(f"Total events of this run: {len(events)}")
+print(f"Max number of chunks: {max_num_chunk}")
 
 # Init ray...
-ray.init(num_cpus = ray_num_cpus)
+# Check if RAY_ADDRESS is set in the environment
+USES_MULTI_NODES = os.getenv('USES_MULTI_NODES')
+if USES_MULTI_NODES:
+    ray.init(address = 'auto')
+else:
+    ray.init(num_cpus = ray_num_cpus)
 
 # Create an actor for each batch
 actors = [BenchmarkDataloader.remote(config, device, event_group) for event_group in event_groups]
