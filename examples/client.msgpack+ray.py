@@ -52,7 +52,7 @@ import msgpack
 import numpy as np
 import ray
 
-ray.init()
+ray.init(num_cpus = 10)
 
 @ray.remote
 def fetch_event(exp, run, access_mode, detector_name, event):
@@ -92,4 +92,3 @@ if __name__ == "__main__":
         data_array, pid, event = ray.get(done_futures[0])
         if data_array is not None:
             print(f"PID ({pid:02d}), Event: {event:06d}, Data for event: {data_array.shape}")
-

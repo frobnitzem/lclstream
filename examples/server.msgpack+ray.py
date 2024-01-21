@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # server.py
+# gunicorn -w 10 -b 172.24.49.14:5000 server:app
 
 from flask import Flask, request, Response
 import os
