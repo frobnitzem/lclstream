@@ -3,15 +3,17 @@
 
 import h5py
 import yaml
+import argparse
+
 from bokeh.io import curdoc
 from bokeh.models import DataTable, TableColumn, TextInput, ColumnDataSource, CustomJS
 from bokeh.layouts import layout, column
 
-# Function to read the HDF5 file path from a YAML file
-def read_yaml(yaml_file):
-    with open(yaml_file, 'r') as file:
-        config = yaml.safe_load(file)
-    return config.get('path_h5')
+parser = argparse.ArgumentParser(description='Run the Bokeh HDF5 Viewer.')
+parser.add_argument('--path_hdf5', help='Path to the HDF5 file')
+parser.add_argument('--port', help='Port to serve the application on', type=int, default=8080)
+parser.add_argument('--websocket-origin', help='WebSocket origin', default='localhost:8080')
+args = parser.parse_args()
 
 # Function to recursively parse the HDF5 file structure and build a graph representation
 def build_hdf5_graph(path_h5):
@@ -37,9 +39,8 @@ def build_hdf5_graph(path_h5):
 
     return graph
 
-# Read the HDF5 file path from the YAML file
-yaml_file = 'h5viewer_config.yaml'  # Replace with your YAML file path
-path_h5 = read_yaml(yaml_file)
+# Read the HDF5 file path from the command line
+path_h5 = args.path_hdf5
 
 # Build the graph
 hdf5_graph = build_hdf5_graph(path_h5)
