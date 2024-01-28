@@ -26,13 +26,13 @@ class RemotePsanaDataset(Dataset):
     def fetch_event(self, exp, run, access_mode, detector_name, event):
         ## url = 'http://172.24.49.14:5000/fetch-data'
         url = self.url
-        payload = { 
+        payload = {
             'exp'          : exp,
             'run'          : run,
             'access_mode'  : access_mode,
             'detector_name': detector_name,
             'event'        : event
-        }   
+        }
         response = requests.post(url, json=payload)
         if response.status_code == 200:
             response_dict = msgpack.unpackb(response.content, raw=False)
@@ -47,16 +47,15 @@ class RemotePsanaDataset(Dataset):
 
 # Usage example
 url = 'http://172.24.49.14:5000/fetch-data'
-requests_list = [
-    ('xpptut15', 630, 'idx', 'jungfrau1M', event) for event in range(1000)
-]
+requests_list = [ ('xpptut15'   , 630, 'idx', 'jungfrau1M', event) for event in range(1000) ] +\
+                [ ('mfxp1002121',   7, 'idx',    'Rayonix', event) for event in range(1000) ]
 
 dataset = RemotePsanaDataset(url = url, requests_list = requests_list)
 
 # DataLoader setup
 from torch.utils.data import DataLoader
 
-dataloader = DataLoader(dataset, batch_size=20, num_workers=10, prefetch_factor = 1)
+dataloader = DataLoader(dataset, batch_size=20, num_workers=10, prefetch_factor = None)
 
 dataloader_iter = iter(dataloader)
 batch_idx       = 0
