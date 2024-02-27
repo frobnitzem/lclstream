@@ -72,12 +72,12 @@ async def get_psana_data_async(exp, run, access_mode, detector_name, event, mode
     return data
 
 class DataRequest(BaseModel):
-    exp: str
-    run: int
-    access_mode: str
+    exp          : str
+    run          : int
+    access_mode  : str
     detector_name: str
-    event: int
-    mode: str = 'calib'
+    event        : int
+    mode         : str = 'calib'
 
 @app.post('/fetch-data')
 async def fetch_data(request: DataRequest):
