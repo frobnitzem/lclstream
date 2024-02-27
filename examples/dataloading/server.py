@@ -28,12 +28,12 @@ def get_psana_img(exp, run, access_mode, detector_name):
 
 @app.route('/fetch-data', methods=['POST'])
 def fetch_data():
-    exp = request.json.get('exp')
-    run = request.json.get('run')
-    access_mode = request.json.get('access_mode')
+    exp           = request.json.get('exp')
+    run           = request.json.get('run')
+    access_mode   = request.json.get('access_mode')
     detector_name = request.json.get('detector_name')
-    event = request.json.get('event')
-    mode = request.json.get('mode', 'calib')
+    event         = request.json.get('event')
+    mode          = request.json.get('mode', 'calib')
 
     psana_img = get_psana_img(exp, run, access_mode, detector_name)
     data = psana_img.get(event, None, mode)
@@ -49,12 +49,12 @@ def fetch_data():
 
 @app.route('/fetch-hdf5', methods=['POST'])
 def fetch_hdf5():
-    exp = request.json.get('exp')
-    run = request.json.get('run')
-    access_mode = request.json.get('access_mode')
+    exp           = request.json.get('exp')
+    run           = request.json.get('run')
+    access_mode   = request.json.get('access_mode')
     detector_name = request.json.get('detector_name')
-    event = request.json.get('event')
-    mode = request.json.get('mode', 'calib')
+    event         = request.json.get('event')
+    mode          = request.json.get('mode', 'calib')
 
     psana_img = get_psana_img(exp, run, access_mode, detector_name)
     data = psana_img.get(event, None, mode)
