@@ -98,12 +98,12 @@ transformer_auto_wrapper_policy = functools.partial(
 # ___/ FSDP WRAP \___
 model_orig = copy.deepcopy(model)
 sharded_model = FSDP(
-        model,
-        auto_wrap_policy  = transformer_auto_wrapper_policy,
-        mixed_precision   = bfloatPolicy,
-        sharding_strategy = model_sharding_strategy,
-        device_id         = torch.cuda.current_device(),
-    )
+    model,
+    auto_wrap_policy  = transformer_auto_wrapper_policy,
+    mixed_precision   = bfloatPolicy,
+    sharding_strategy = model_sharding_strategy,
+    device_id         = torch.cuda.current_device(),
+)
 
 # ___/ OPTIMIZER \___
 optimizer = torch.optim.AdamW(sharded_model.parameters(), lr=8e-4, weight_decay=0.005)
@@ -129,19 +129,33 @@ if version.parse(CURRENT_PYTORCH_VERSION) < version.parse('2.1.0'):
         torch.save(optim_state, path_chkpt_optim)
         print(f"{path_chkpt_optim} is saved.")
 
+    dist.barrier()
+
     # == Loading ==
     # === Model ===
+    # I believe this is not the right way to load a full state dict, becuase the model is already sharded...
     if fsdp_rank == 0:
-        chkpt_model = torch.load(path_chkpt_model)
-        sharded_model.load_state_dict(chkpt_model)
-        print(f"{path_chkpt_model} is loaded.")
+        chkpt_model = torch.load(path_chkpt_model, map_location = 'cpu')
+        ## sharded_model.module.load_state_dict(chkpt_model)
+        model = Transformer(token_lib_size, embd_size, context_length, num_blocks, num_heads)
+        model.load_state_dict(chkpt_model)
+        sharded_model = FSDP(
+            model,
+            auto_wrap_policy  = transformer_auto_wrapper_policy,
+            mixed_precision   = bfloatPolicy,
+            sharding_strategy = model_sharding_strategy,
+            device_id         = torch.cuda.current_device(),
+        )
+        print(f"{path_chkpt_model} is loaded to model.")
+
+    dist.barrier()
 
     # === Optimizer ===
     chkpt_optim = None
     if fsdp_rank == 0:
         chkpt_optim = torch.load(path_chkpt_optim)
+        print(f"[RANK {fsdp_rank}] {path_chkpt_optim} is loaded.")
     sharded_optim = FSDP.scatter_full_optim_state_dict(chkpt_optim, sharded_model)
-    print(f"[RANK {fsdp_rank}] {path_chkpt_optim} is loaded.")
 ## else:
 ##     # == Saving ==
 ##     # === Model ===
