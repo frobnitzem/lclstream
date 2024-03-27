@@ -22,8 +22,16 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 from torch.distributed.fsdp.wrap import (
     transformer_auto_wrap_policy,
 )
-
-from poorman_transformer.modeling.transformer import TransformerBlock
+from torch.distributed._shard.checkpoint import (
+    FileSystemReader,
+    FileSystemWriter,
+    save_state_dict,
+    load_state_dict,
+)
+from torch.distributed.checkpoint.default_planner import (
+    DefaultSavePlanner,
+    DefaultLoadPlanner,
+)
 
 from poorman_transformer.modeling.transformer import Transformer, TransformerBlock
 
@@ -105,12 +113,20 @@ sharded_model = FSDP(
     device_id         = torch.cuda.current_device(),
 )
 
+# Count parameters in sharded and original model
+unsharded_param_count = sum(p.numel() for p in model_orig.parameters())
+sharded_param_count = sum(p.numel() for p in sharded_model.module.parameters())    # ...`.module` accesses the original unwrapped model
+print(f"Unsharded parameter count: {unsharded_param_count}")
+print(f"Sharded parameter count: {sharded_param_count}")
+
 # ___/ OPTIMIZER \___
 optimizer = torch.optim.AdamW(sharded_model.parameters(), lr=8e-4, weight_decay=0.005)
 
 # ___/ CHECKPOINT \___
+# == Full state dict ==
 # [SCENARIO] We simulate a model saving and loading.
-if version.parse(CURRENT_PYTORCH_VERSION) < version.parse('2.1.0'):
+uses_full_state_dict = False
+if uses_full_state_dict and version.parse(CURRENT_PYTORCH_VERSION) < version.parse('2.1.0'):
     # == Saving ==
     # === Model ===
     fullstate_save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
@@ -190,9 +206,53 @@ if version.parse(CURRENT_PYTORCH_VERSION) < version.parse('2.1.0'):
 ##     FSDP.optim_state_dict_to_load(chkpt_optim, sharded_model)
 ##     print(f"[RANK {fsdp_rank}] {path_chkpt_optim} is loaded.")
 
-# ___/ OTHERS \___
-# Count parameters in sharded and original model
-unsharded_param_count = sum(p.numel() for p in model_orig.parameters())
-sharded_param_count = sum(p.numel() for p in sharded_model.module.parameters())    # ...`.module` accesses the original unwrapped model
-print(f"Unsharded parameter count: {unsharded_param_count}")
-print(f"Sharded parameter count: {sharded_param_count}")
+if not uses_full_state_dict and version.parse(CURRENT_PYTORCH_VERSION) < version.parse('2.1.0'):
+    # == Saver ==
+    path_root_chkpt_dir = 'dummy_sharded_chkpts'
+    os.makedirs(path_root_chkpt_dir, exist_ok = True)
+    distributed_writer = FileSystemWriter(
+        path_root_chkpt_dir,
+        single_file_per_rank=True,
+        ## thread_count=cfg.save_using_num_threads,
+        sync_files=False,
+        # per_thread_copy_ahead=20_000_000,
+    )
+    state_dict = {}
+    with FSDP.state_dict_type(sharded_model, StateDictType.SHARDED_STATE_DICT):
+        checkpoint  = sharded_model.state_dict()
+        optim_state = FSDP.sharded_optim_state_dict(sharded_model, optimizer)
+        state_dict = {
+            'model_state_dict' : checkpoint,
+            'optim_state_dict' : optim_state,
+        }
+
+        save_state_dict(
+            state_dict     = state_dict,
+            storage_writer = distributed_writer,
+            ## planner        = DefaultSavePlanner(),
+        )
+    dist.barrier()
+
+    if fsdp_rank == 0:
+        print(f"Sharded state checkpoint saved to {path_root_chkpt_dir}.")
+
+    # == Loader ==
+    model = Transformer(token_lib_size, embd_size, context_length, num_blocks, num_heads)
+    sharded_model = FSDP(
+        model,
+        auto_wrap_policy  = transformer_auto_wrapper_policy,
+        mixed_precision   = bfloatPolicy,
+        sharding_strategy = model_sharding_strategy,
+        device_id         = torch.cuda.current_device(),
+    )
+    reader = FileSystemReader(path_root_chkpt_dir)
+    with FSDP.state_dict_type(sharded_model, StateDictType.SHARDED_STATE_DICT):
+        checkpoint = {"model_state_dict": sharded_model.state_dict()}
+        load_state_dict(
+            state_dict     = checkpoint,
+            storage_reader = reader,
+            ## planner        = DefaultLoadPlanner(),
+        )
+        sharded_model.load_state_dict(checkpoint["model_state_dict"])
+    if fsdp_rank == 0:
+        print(f"Sharded state checkpoint loaded from {path_root_chkpt_dir}.")
