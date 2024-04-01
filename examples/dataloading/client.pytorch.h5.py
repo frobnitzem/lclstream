@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import hdf5plugin
 import time
 import requests
 import io
@@ -50,7 +51,10 @@ class RemotePsanaDataset(Dataset):
             return None, None, None
 
 # Usage example
-url = 'http://172.24.49.14:5001/fetch-hdf5'
+## url = 'http://172.24.49.14:5000/fetch-hdf5'
+## url = 'http://172.24.49.14:5001/fetch-hdf5'
+url = 'http://172.24.48.143:5001/fetch-hdf5'
+## url = 'http://localhost:5000/fetch-hdf5'
 requests_list = [ ('xpptut15'   , 630, 'idx', 'jungfrau1M', event) for event in range(1000) ] +\
                 [ ('mfxp1002121',   7, 'idx',    'Rayonix', event) for event in range(1000) ]
 
@@ -66,6 +70,7 @@ while True:
         t_e = time.monotonic()
         loading_time_in_sec = (t_e - t_s)
 
+        ## print(f"Batch idx: {batch_idx:d} (PID: {batch_pid.tolist()}), Total time: {loading_time_in_sec:.2f} s, Average time: {loading_time_in_sec / len(batch_data) * 1e3:.2f} ms/event, Batch shape: {batch_data.shape}")
         print(f"Batch idx: {batch_idx:d}, Total time: {loading_time_in_sec:.2f} s, Average time: {loading_time_in_sec / len(batch_data) * 1e3:.2f} ms/event, Batch shape: {batch_data.shape}")
 
         batch_idx += 1
