@@ -9,8 +9,11 @@ import os
 import msgpack
 import io
 import h5py
+import hdf5plugin
 import numpy as np
 from maxie.datasets.psana_utils import PsanaImg
+
+import time
 
 app = Flask(__name__)
 
@@ -57,15 +60,24 @@ def fetch_hdf5():
     mode          = request.json.get('mode', 'calib')
 
     psana_img = get_psana_img(exp, run, access_mode, detector_name)
+
+    t_s  = time.monotonic()
     data = psana_img.get(event, None, mode)
+    t_e  = time.monotonic()
+    t_get_image = t_e - t_s
 
     # Serialize data using BytesIO and hdf5...
+    t_s  = time.monotonic()
     with io.BytesIO() as hdf5_bytes:
         with h5py.File(hdf5_bytes, 'w') as hdf5_file_handle:
-            hdf5_file_handle.create_dataset('data', data = data)
+            hdf5_file_handle.create_dataset('data', data = data, **hdf5plugin.Bitshuffle(nelems=0, lz4=True),)
             hdf5_file_handle.create_dataset('pid' , data = np.array([pid]))
 
         response_data = hdf5_bytes.getvalue()
+    t_e  = time.monotonic()
+    t_pack_image = t_e - t_s
+
+    print(f"Processed exp={exp}, run={run:04d}, event={event:06d}; psana={t_get_image * 1e3:.2f} ms, packing={t_pack_image * 1e3:.2f} ms.")
 
     return Response(response_data, mimetype='application/octet-stream')
 
