@@ -34,8 +34,29 @@ def build_hdf5_graph(path_h5):
             for new_node_name in node_val.keys():
                 process_node(h5_file_handle, new_node_name, node_path)
 
-    with h5py.File(path_h5, 'r') as h5_file_handle:
-        process_node(h5_file_handle, node_name = '', parent_node_path = '')
+    # Handle data served over http as well.
+    if path_h5.startswith("http://") or path_h5.startswith("https://"):
+        # url = 'http://172.24.49.14:5000/fetch-data'
+        url = path_h5
+        # FIXME: specify these values from a url somehow
+        payload = {
+            'exp'          : exp,
+            'run'          : run,
+            'access_mode'  : access_mode,
+            'detector_name': detector_name,
+            'event'        : event
+        }
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            with io.BytesIO(response.content) as hdf5_bytes:
+                with h5py.File(hdf5_bytes, 'r') as h5_file_handle:
+                    process_node(h5_file_handle, node_name = '', parent_node_path = '')
+            return data_array, pid, event
+        else:
+            print(f"Failed to fetch data from {url}: {response.status_code}")
+    else:
+        with h5py.File(path_h5, 'r') as h5_file_handle:
+            process_node(h5_file_handle, node_name = '', parent_node_path = '')
 
     return graph
 

@@ -13,7 +13,7 @@ import numpy as np
 import asyncio
 import signal
 
-from maxie.datasets.psana_utils import PsanaImg
+from .datasets.psana_utils import PsanaImg
 
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Response
@@ -78,6 +78,15 @@ class DataRequest(BaseModel):
     detector_name: str
     event        : int
     mode         : str = 'calib'
+
+@app.get('/')
+async def get_list():
+    response_dict = {
+        'data': data.tolist(),  # Convert NumPy array to list
+        'pid': pid
+    }
+    response_data = msgpack.packb(response_dict, use_bin_type=True)
+    return list(psana_img_buffer.keys())
 
 @app.post('/fetch-data')
 async def fetch_data(request: DataRequest):
