@@ -1,87 +1,134 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# server.py
-# gunicorn -w 10 -b 172.24.49.14:5000 server:app
+# server_async.py
+# uvicorn --workers 4 --host localhost --port 5001 server_async:app
 
+import msgpack
 import os
 import io
-import time
-
-from flask import Flask, request, Response
-import msgpack # type: ignore[import-untyped]
-import h5py # type: ignore[import-untyped]
-import hdf5plugin # type: ignore[import-untyped]
+import h5py
+import hdf5plugin
 import numpy as np
+import asyncio
+import signal
 
 from .datasets.psana_utils import PsanaImg
 
-app = Flask(__name__)
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Response
+from concurrent.futures import ProcessPoolExecutor
 
-# Buffer for each process (if using multiple processes with something like Gunicorn)
+# ___/ ASYNC CONFIG \___
+app = FastAPI()
+
+# Initialize the executor with a specific number of workers
+executor = ProcessPoolExecutor(max_workers=4)
+
+# Cleanup function to ensure executor shutdown
+def cleanup():
+    executor.shutdown(wait=True)
+    print("Executor has been shut down gracefully")
+
+# Register cleanup with FastAPI shutdown event
+@app.on_event("shutdown")
+def shutdown_event():
+    cleanup()
+
+# Additional signal handling for manual interruption
+def handle_exit(sig, frame):
+    cleanup()
+    asyncio.get_event_loop().stop()
+    print("Signal received, shutting down.")
+
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
+
+# ___/ MAIN \___
+# Create buffer for each process (if using multiple processes with something like Gunicorn)
 psana_img_buffer = {}
 
 # Get the current process ID
 pid = os.getpid()
 
-def get_psana_img(exp, run, access_mode, detector_name):
+def get_psana_img(exp: str, run: int, access_mode: str, detector_name: str):
     key = (exp, run)
     if key not in psana_img_buffer:
         psana_img_buffer[key] = PsanaImg(exp, run, access_mode, detector_name)
     return psana_img_buffer[key]
 
-@app.route('/fetch-data', methods=['POST'])
-def fetch_data():
-    exp           = request.json.get('exp')
-    run           = request.json.get('run')
-    access_mode   = request.json.get('access_mode')
-    detector_name = request.json.get('detector_name')
-    event         = request.json.get('event')
-    mode          = request.json.get('mode', 'calib')
-
+def get_psana_data(exp, run, access_mode, detector_name, event, mode):
     psana_img = get_psana_img(exp, run, access_mode, detector_name)
-    data = psana_img.get(event, None, mode)
+    data      = psana_img.get(event, None, mode)
+    return data
 
-    # Serialize data using msgpack
+async def get_psana_data_async(exp, run, access_mode, detector_name, event, mode):
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(
+        executor,
+        get_psana_data,
+        exp, run, access_mode, detector_name, event, mode
+    )
+    return data
+
+class DataRequest(BaseModel):
+    exp          : str
+    run          : int
+    access_mode  : str
+    detector_name: str
+    event        : int
+    mode         : str = 'calib'
+
+@app.get('/')
+async def get_list():
     response_dict = {
         'data': data.tolist(),  # Convert NumPy array to list
         'pid': pid
     }
     response_data = msgpack.packb(response_dict, use_bin_type=True)
-    return Response(response_data, mimetype='application/octet-stream')
+    return list(psana_img_buffer.keys())
 
+@app.post('/fetch-data')
+async def fetch_data(request: DataRequest):
+    exp           = request.exp
+    run           = request.run
+    access_mode   = request.access_mode
+    detector_name = request.detector_name
+    event         = request.event
+    mode          = request.mode
 
-@app.route('/fetch-hdf5', methods=['POST'])
-def fetch_hdf5():
-    exp           = request.json.get('exp')
-    run           = request.json.get('run')
-    access_mode   = request.json.get('access_mode')
-    detector_name = request.json.get('detector_name')
-    event         = request.json.get('event')
-    mode          = request.json.get('mode', 'calib')
+    data = await get_psana_data_async(
+        exp, run, access_mode, detector_name, event, mode
+    )
 
-    psana_img = get_psana_img(exp, run, access_mode, detector_name)
+    response_dict = {
+        'data': data.tolist(),  # Convert NumPy array to list
+        'pid': pid
+    }
+    response_data = msgpack.packb(response_dict, use_bin_type=True)
+    return Response(content=response_data, media_type='application/octet-stream')
 
-    t_s  = time.monotonic()
-    data = psana_img.get(event, None, mode)
-    t_e  = time.monotonic()
-    t_get_image = t_e - t_s
+@app.post('/fetch-hdf5')
+async def fetch_hdf5(request: DataRequest):
+    exp           = request.exp
+    run           = request.run
+    access_mode   = request.access_mode
+    detector_name = request.detector_name
+    event         = request.event
+    mode          = request.mode
 
-    # Serialize data using BytesIO and hdf5...
-    t_s  = time.monotonic()
+    data = await get_psana_data_async(
+        exp, run, access_mode, detector_name, event, mode
+    )
+
     with io.BytesIO() as hdf5_bytes:
         with h5py.File(hdf5_bytes, 'w') as hdf5_file_handle:
-            hdf5_file_handle.create_dataset('data', data = data, **hdf5plugin.Bitshuffle(nelems=0, lz4=True),)
-            hdf5_file_handle.create_dataset('pid' , data = np.array([pid]))
-
+            hdf5_file_handle.create_dataset('data', data=data, **hdf5plugin.Bitshuffle(nelems=0, lz4=True),)
+            hdf5_file_handle.create_dataset('pid', data=np.array([pid]))
         response_data = hdf5_bytes.getvalue()
-    t_e  = time.monotonic()
-    t_pack_image = t_e - t_s
 
-    print(f"Processed exp={exp}, run={run:04d}, event={event:06d}; psana={t_get_image * 1e3:.2f} ms, packing={t_pack_image * 1e3:.2f} ms.")
-
-    return Response(response_data, mimetype='application/octet-stream')
+    return Response(content=response_data, media_type='application/octet-stream')
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
-
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5001)
