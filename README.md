@@ -2,8 +2,16 @@
 
 Image streaming application for psana.
 
-This is a simple FastAPI server that reads psana1 data from
-a local directory and serves individual images.
+This is a FastAPI server that pushes datasets
+on command.  The steps run as follows,
+
+1. Send a REST-API request to initiate a dataset push.
+   - dataset
+   - experiment number
+   - receiving server
+
+2. A separate process spawns to send all images
+   to the requested server.
 
 
 # Development
