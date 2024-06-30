@@ -1,25 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# server_async.py
-# uvicorn --workers 4 --host localhost --port 5001 server_async:app
+# run as:
+#
+#     ./server.py
+#
+# or
+#
+#     uvicorn --host localhost --port 5001 server:app
+#
 
-import os
-import io
+from typing import Dict, List
 import asyncio
 import signal
 
 from .psana_img_src import PsanaImgSrc
+from .transfer import Transfer
+from .models import DataRequest
 
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException #, Response
 from concurrent.futures import ProcessPoolExecutor
 
 # ___/ ASYNC CONFIG \___
 app = FastAPI()
 
-# Initialize the executor with a specific number of workers
-executor = ProcessPoolExecutor(max_workers=4)
+# Initialize the executor with no specific number of workers
+executor = ProcessPoolExecutor() #max_workers=4)
 
 # Cleanup function to ensure executor shutdown
 def cleanup():
@@ -40,66 +46,47 @@ def handle_exit(sig, frame):
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
 
-import pynng
-import zfpy
-def serialize(data) -> bytes:
-    return zfpy.compress_numpy(orig_array, write_header=True)
-    # inverse = zfpy.decompress_numpy(buf)
-
-def send_experiment(exp, run, access_mode, detector_name, mode, addr) -> None:
-    ps = PsanaImgSrc(exp, run, access_mode, detector_name)
-    send_opts = {
-       "send_buffer_size": 32 # send blocks if 32 messages queue up
-    }
-
-    start = time.time()
-    n = 0
-    nbyte = 0
-    with Push0(dial=addr, **send_opts) as push:
-        for img in ps:
-            buf = serialize(img)
-            n += 1
-            #nbyte += img.nbytes
-            nbyte += len(buf)
-            push.send(buf)
-    t = time.time() - start
-    print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec.")
-
-async def send_experiment_async(exp, run, access_mode, detector_name, mode, addr) -> None:
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(
-        executor,
-        send_experiment,
-        exp, run, access_mode, detector_name, mode, addr
-    )
-
-class DataRequest(BaseModel):
-    exp          : str
-    run          : int
-    access_mode  : str
-    detector_name: str
-    mode         : str = 'calib'
-    addr         : str
-
 @app.get('/')
 async def list_experiments() -> List[str]:
     return []
 
-@app.post('/fetch-data')
-async def fetch_data(request: DataRequest) -> str:
-    exp           = request.exp
-    run           = request.run
-    access_mode   = request.access_mode
-    detector_name = request.detector_name
-    mode          = request.mode
-    addr          = request.addr
+transfer_id = 0
+transfers : Dict[int, Transfer] = {}
 
-    await send_experiment_async(
-        exp, run, access_mode, detector_name, mode, addr
-    )
+@app.get('/transfers')
+async def list_transfers() -> List[DataRequest]:
+    return [trs.request for trs in transfers.values()]
 
-    return "ok"
+@app.post('/transfers/delete/{n}')
+async def cancel_transfer(n : int) -> bool:
+    try:
+        trs = transfers.pop(n)
+    except KeyError:
+        return False
+    return trs.cancel()
+
+@app.get('/transfers/{n}')
+async def get_transfer(n : int) -> str:
+    try:
+        trs = transfers[n]
+    except KeyError:
+        return "not found"
+    # TODO: periodically await and clear these transfers out
+    return trs.state
+
+@app.post('/transfers/new')
+async def new_transfer(request: DataRequest) -> int:
+    trs = Transfer(request)
+    ok = trs.start() # TODO catch some errors immediately
+    #if not ok:
+
+    n = transfer_id
+    transfer_id += 1
+    # stash in the list
+    transfers[n] = trs
+    return n
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5001)
+    print("Access this server at http://127.0.0.1:5001/docs")
+    uvicorn.run(app, host="127.0.0.1", port=5001)

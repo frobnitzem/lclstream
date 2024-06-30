@@ -1,5 +1,6 @@
 import numpy as np
-import psana
+
+from .psana_stub import DataSource, Detector
 
 class PsanaImgSrc:
     """
@@ -11,12 +12,12 @@ class PsanaImgSrc:
         # Boilerplate code to access an image
         # Set up data source
         self.datasource_id = f"exp={exp}:run={run}:{mode}"
-        self.datasource    = psana.DataSource( self.datasource_id )
+        self.datasource    = DataSource( self.datasource_id )
         self.run_current   = next(self.datasource.runs())
         self.timestamps    = self.run_current.times()
 
         # Set up detector
-        self.detector = psana.Detector(detector_name)
+        self.detector = Detector(detector_name)
 
         # Set image reading mode
         self.read = { "raw"   : self.detector.raw,
@@ -27,7 +28,7 @@ class PsanaImgSrc:
     def __len__(self):
         return len(self.timestamps)
 
-    def __iter__(self, addr, mode, id_panel = None):
+    def __call__(self, mode, id_panel = None):
         # Only two modes are supported...
         assert mode in ("raw", "calib", "image"), \
                 f"Mode {mode} is not allowed!!!  Only 'raw', 'calib' and 'image' are supported."

@@ -15,6 +15,10 @@ numpy = ">=1.21"
 pynng = "^0.8.0"
 zfpy = "^0.0"
 
+# dev:
+# pytest
+# httpx
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
