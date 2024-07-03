@@ -18,8 +18,8 @@ on command.  The steps run as follows,
 
 Manually run the server code with:
 
-    poetry run uvicorn pstream.server:app --reload
+    poetry run uvicorn lclstream.server:app --reload
 
 or (mimicking deployment usage),
 
-    poetry run gunicorn --config gunicorn_config.py pstream.server:app
+    poetry run gunicorn --config gunicorn_config.py lclstream.server:app

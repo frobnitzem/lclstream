@@ -7,17 +7,17 @@ license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.7"
+python = ">=3.9"
 fastapi = ">=0.103.2"
 pydantic = ">=2.1"
 uvicorn = ">=0.17"
-numpy = ">=1.21"
 pynng = "^0.8.0"
-zfpy = "^0.0"
+zfpy = "^1.0.0"
+numpy = "^2.0.0"
 
-# dev:
-# pytest
-# httpx
+[tool.poetry.group.dev.dependencies]
+httpx = "^0.27.0"
+pytest = "^8.2.2"
 
 [build-system]
 requires = ["poetry-core"]

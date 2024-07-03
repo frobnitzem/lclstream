@@ -5,6 +5,9 @@ import asyncio
 from pynng import Push0
 import zfpy
 
+from .models import DataRequest
+from .psana_img_src import PsanaImgSrc
+
 def serialize(data) -> bytes:
     return zfpy.compress_numpy(data, write_header=True)
     # inverse = zfpy.decompress_numpy(buf)
@@ -41,8 +44,11 @@ async def send_experiment_async(exp : str,
                                 detector_name : str,
                                 mode : str,
                                 addr : str) -> None:
+    loop = asyncio.get_running_loop()
+    # TODO: separate the executor into its own
+    # module or use threads...
     return await loop.run_in_executor(
-        executor,
+        None,
         send_experiment,
         exp, run, access_mode, detector_name, mode, addr
     )
@@ -67,7 +73,6 @@ class Transfer:
             req.detector_name,
             req.mode,
             req.addr )
-        )
         self.state = "completed"
 
     def start(self) -> bool:

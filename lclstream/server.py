@@ -7,7 +7,7 @@
 #
 # or
 #
-#     uvicorn --host localhost --port 5001 server:app
+#     uvicorn --host localhost --port 5001 lclstream.server:app
 #
 
 from typing import Dict, List
@@ -19,11 +19,11 @@ from .transfer import Transfer
 from .models import DataRequest
 
 from fastapi import FastAPI, HTTPException #, Response
-from concurrent.futures import ProcessPoolExecutor
 
 # ___/ ASYNC CONFIG \___
 app = FastAPI()
 
+from concurrent.futures import ProcessPoolExecutor
 # Initialize the executor with no specific number of workers
 executor = ProcessPoolExecutor() #max_workers=4)
 
@@ -76,6 +76,7 @@ async def get_transfer(n : int) -> str:
 
 @app.post('/transfers/new')
 async def new_transfer(request: DataRequest) -> int:
+    global transfer_id
     trs = Transfer(request)
     ok = trs.start() # TODO catch some errors immediately
     #if not ok:
