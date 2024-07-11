@@ -57,7 +57,7 @@ def symm(x):
 
 class StubRun:
     def times(self) -> List[float]:
-        return np.arange(20)
+        return np.arange(20).tolist()
     def event(self, time : int) -> StubEvent:
         return StubEvent(1024, 1024, 'float32')
 

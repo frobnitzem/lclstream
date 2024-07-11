@@ -1,9 +1,9 @@
-from typing import Optional, List, Dict, Any, Awaitable
+from typing import Optional, List, Dict, Any, Awaitable, Tuple
 import time
 import asyncio
 
-from pynng import Push0
-import zfpy
+from pynng import Push0 # type: ignore[import-untyped]
+import zfpy # type: ignore[import-untyped]
 
 from .models import DataRequest
 from .psana_img_src import PsanaImgSrc
@@ -12,12 +12,14 @@ def serialize(data) -> bytes:
     return zfpy.compress_numpy(data, write_header=True)
     # inverse = zfpy.decompress_numpy(buf)
 
+TransferStats = Tuple[int,float,float,float]
+
 def send_experiment(exp : str,
                     run : int,
                     access_mode : str,
                     detector_name : str,
                     mode : str,
-                    addr : str) -> None:
+                    addr : str) -> TransferStats:
     ps = PsanaImgSrc(exp, run, access_mode, detector_name)
     send_opts = {
        "send_buffer_size": 32 # send blocks if 32 messages queue up
@@ -43,7 +45,7 @@ async def send_experiment_async(exp : str,
                                 access_mode : str,
                                 detector_name : str,
                                 mode : str,
-                                addr : str) -> None:
+                                addr : str) -> TransferStats:
     loop = asyncio.get_running_loop()
     # TODO: separate the executor into its own
     # module or use threads...
@@ -56,7 +58,7 @@ async def send_experiment_async(exp : str,
 class Transfer:
     req   : DataRequest
     state : str
-    coro  : Optional[Awaitable]
+    coro  : Optional[Awaitable[TransferStats]]
 
     def __init__(self, request : DataRequest):
         self.request = request
@@ -82,11 +84,11 @@ class Transfer:
     def cancel(self) -> bool:
         if self.coro is None or self.state == "completed":
             return False
-        self.coro.cancel()
+        self.coro.cancel() # type: ignore[attr-defined]
         self.coro = None
         return True
     
-    async def __call__(self) -> None:
+    async def __call__(self) -> str:
         if self.coro is None:
             raise ValueError("Transfer.start() was not called")
         # The transfer can be awaited
