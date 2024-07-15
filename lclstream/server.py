@@ -1,17 +1,27 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
+# run as:
+#
+#     ./server.py
+#
+# or
+#
+#     uvicorn --host localhost --port 5001 lclstream.server:app
+#
 
 from typing import Dict, List
 import asyncio
 import signal
 
-import actor_api as act
-
 from .psana_img_src import PsanaImgSrc
 from .transfer import Transfer
 from .models import DataRequest
 
+from fastapi import FastAPI, HTTPException #, Response
+
 # ___/ ASYNC CONFIG \___
-app = act.State()
+app = FastAPI()
 
 from concurrent.futures import ProcessPoolExecutor
 # Initialize the executor with no specific number of workers
@@ -22,10 +32,10 @@ def cleanup():
     executor.shutdown(wait=True)
     print("Executor has been shut down gracefully")
 
-## Register cleanup with FastAPI shutdown event
-#@app.on_event("shutdown")
-#def shutdown_event():
-#    cleanup()
+# Register cleanup with FastAPI shutdown event
+@app.on_event("shutdown")
+def shutdown_event():
+    cleanup()
 
 # Additional signal handling for manual interruption
 def handle_exit(sig, frame):
@@ -36,26 +46,26 @@ def handle_exit(sig, frame):
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
 
-@app.call()
+@app.get('/')
 async def list_experiments() -> List[str]:
     return []
 
 transfer_id = 0
 transfers : Dict[int, Transfer] = {}
 
-@app.call()
+@app.get('/transfers')
 async def list_transfers() -> List[DataRequest]:
     return [trs.request for trs in transfers.values()]
 
-@app.call()
-async def del_transfer(n : int) -> bool:
+@app.post('/transfers/delete/{n}')
+async def cancel_transfer(n : int) -> bool:
     try:
         trs = transfers.pop(n)
     except KeyError:
         return False
     return trs.cancel()
 
-@app.call()
+@app.get('/transfers/{n}')
 async def get_transfer(n : int) -> str:
     try:
         trs = transfers[n]
@@ -64,7 +74,7 @@ async def get_transfer(n : int) -> str:
     # TODO: periodically await and clear these transfers out
     return trs.state
 
-@app.call()
+@app.post('/transfers/new')
 async def new_transfer(request: DataRequest) -> int:
     global transfer_id
     trs = Transfer(request)
@@ -76,3 +86,4 @@ async def new_transfer(request: DataRequest) -> int:
     # stash in the list
     transfers[n] = trs
     return n
+
