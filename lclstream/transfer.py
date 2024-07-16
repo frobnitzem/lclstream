@@ -1,3 +1,4 @@
+from subprocess import Popen
 from typing import Optional, List, Dict, Any, Awaitable, Tuple
 import time
 import asyncio
@@ -25,20 +26,36 @@ def send_experiment(exp : str,
        "send_buffer_size": 32 # send blocks if 32 messages queue up
     }
 
-    start = time.time()
-    n = 0
-    mbyte = 0 # uncompressed
-    nbyte = 0 # sent
-    with Push0(dial=addr, **send_opts) as push:
-        for img in ps(mode):
-            buf = serialize(img)
-            n += 1
-            mbyte += img.nbytes
-            nbyte += len(buf)
-            push.send(buf)
-    t = time.time() - start
-    print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
-    return (n, mbyte, nbyte, t)
+    assert(access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd")
+
+    if mode == "idx":
+        start = time.time()
+        n = 0
+        mbyte = 0 # uncompressed
+        nbyte = 0 # sent
+        with Push0(dial=addr, **send_opts) as push:
+            for img in ps(mode):
+                buf = serialize(img)
+                n += 1
+                mbyte += img.nbytes
+                nbyte += len(buf)
+                push.send(buf)
+        t = time.time() - start
+    else:
+        mpi_pool_size = 16  # Hardcoding the mpi pool size for now
+        proc = Popen(["mpirun",
+                     f"-n{mpi_pool_size}",
+                      "python",
+                      "mpi_psana.py",
+                     f"-e={exp}",
+                     f"-r={run}",
+                     f"-d={detector}",
+                     f"-m={mode}",
+                     f"-a={addr}"])
+        proc.wait()
+
+    # print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
+    # return (n, mbyte, nbyte, t)
 
 async def send_experiment_async(exp : str,
                                 run : int,
