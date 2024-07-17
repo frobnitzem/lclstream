@@ -1,4 +1,4 @@
-from subprocess import Popen
+from subprocess import Popen, PIPE, STDOUT
 from typing import Optional, List, Dict, Any, Awaitable, Tuple
 import time
 import asyncio
@@ -21,18 +21,18 @@ def send_experiment(exp : str,
                     detector_name : str,
                     mode : str,
                     addr : str) -> TransferStats:
-    ps = PsanaImgSrc(exp, run, access_mode, detector_name)
-    send_opts = {
-       "send_buffer_size": 32 # send blocks if 32 messages queue up
-    }
 
-    assert(access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd")
+    assert access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd"
 
     if mode == "idx":
+        ps = PsanaImgSrc(exp, run, access_mode, detector_name)
         start = time.time()
         n = 0
         mbyte = 0 # uncompressed
         nbyte = 0 # sent
+        send_opts = {
+            "send_buffer_size": 32 # send blocks if 32 messages queue up
+        }
         with Push0(dial=addr, **send_opts) as push:
             for img in ps(mode):
                 buf = serialize(img)
@@ -42,17 +42,22 @@ def send_experiment(exp : str,
                 push.send(buf)
         t = time.time() - start
     else:
-        mpi_pool_size = 16  # Hardcoding the mpi pool size for now
+        mpi_pool_size = 3  # Hardcoding the mpi pool size for now
         proc = Popen(["mpirun",
                      f"-n{mpi_pool_size}",
                       "python",
+                      "-u",
                       "mpi_psana.py",
                      f"-e={exp}",
                      f"-r={run}",
                      f"-d={detector}",
                      f"-m={mode}",
-                     f"-a={addr}"])
-        proc.wait()
+                     f"-a={addr}"],
+                     stdin=PIPE,
+                     stdout=PIPE,
+                     stderr=STDOUT)
+        print(p.stdout.read())
+        print(p.stderr.read())
 
     # print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
     # return (n, mbyte, nbyte, t)
