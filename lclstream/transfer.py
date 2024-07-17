@@ -43,21 +43,11 @@ def send_experiment(exp : str,
         t = time.time() - start
     else:
         mpi_pool_size = 3  # Hardcoding the mpi pool size for now
-        proc = Popen(["mpirun",
-                     f"-n{mpi_pool_size}",
-                      "python",
-                      "-u",
-                      "mpi_psana.py",
-                     f"-e={exp}",
-                     f"-r={run}",
-                     f"-d={detector}",
-                     f"-m={mode}",
-                     f"-a={addr}"],
-                     stdin=PIPE,
-                     stdout=PIPE,
-                     stderr=STDOUT)
-        print(p.stdout.read())
-        print(p.stderr.read())
+#        proc = Popen(f"mpirun -n {mpi_pool_size} echo ciao",
+#                     shell=True)
+        proc = Popen(f"mpirun -n {mpi_pool_size} python lclstream/mpi_psana.py -e={exp} -r={run} -d={detector} -m={mode} -a={addr}",
+                     shell=True)
+        p.communicate()
 
     # print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
     # return (n, mbyte, nbyte, t)
