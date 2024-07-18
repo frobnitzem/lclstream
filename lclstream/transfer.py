@@ -1,5 +1,5 @@
-from subprocess import Popen, PIPE, STDOUT
-from typing import Optional, List, Dict, Any, Awaitable, Tuple
+from subprocess import Popen
+from typing import Optional, List,Dict, Any, Awaitable, Tuple
 import time
 import asyncio
 
@@ -9,21 +9,18 @@ import zfpy # type: ignore[import-untyped]
 from .models import DataRequest
 from .psana_img_src import PsanaImgSrc
 
-def serialize(data) -> bytes:
-    return zfpy.compress_numpy(data, write_header=True)
+
+def serialize(data) -> bytes: return zfpy.compress_numpy(data,
+        write_header=True)
     # inverse = zfpy.decompress_numpy(buf)
 
 TransferStats = Tuple[int,float,float,float]
 
-def send_experiment(exp : str,
-                    run : int,
-                    access_mode : str,
-                    detector_name : str,
-                    mode : str,
-                    addr : str) -> TransferStats:
+def send_experiment(exp : str, run : int, access_mode : str, detector_name :
+        str, mode : str, addr : str) -> TransferStats:
 
     assert access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd"
-
+     
     if mode == "idx":
         ps = PsanaImgSrc(exp, run, access_mode, detector_name)
         start = time.time()
@@ -43,14 +40,11 @@ def send_experiment(exp : str,
         t = time.time() - start
     else:
         mpi_pool_size = 3  # Hardcoding the mpi pool size for now
-#        proc = Popen(f"mpirun -n {mpi_pool_size} echo ciao",
-#                     shell=True)
-        proc = Popen(f"mpirun -n {mpi_pool_size} python lclstream/mpi_psana.py -e={exp} -r={run} -d={detector} -m={mode} -a={addr}",
-                     shell=True)
-        p.communicate()
+        cmd=(f"mpirun -np {mpi_pool_size} mpi_psana.py -e {exp} "
+             f"-r {run} -d {detector_name} -m {mode} -a {addr}")
+        proc = Popen(cmd, shell=True)
+        proc.wait()
 
-    # print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
-    # return (n, mbyte, nbyte, t)
 
 async def send_experiment_async(exp : str,
                                 run : int,

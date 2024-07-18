@@ -1,9 +1,10 @@
+#!/usr/bin/env python
 from mpi4py import MPI
 
 from pynng import Push0 # type: ignore[import-untyped]
 import zfpy # type: ignore[import-untyped]
 
-from .psana_img_src import PsanaImgSrc
+from lclstream.psana_img_src import PsanaImgSrc
 
 def serialize(data) -> bytes:
     return zfpy.compress_numpy(data, write_header=True)
