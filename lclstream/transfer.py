@@ -21,29 +21,17 @@ def send_experiment(exp : str, run : int, access_mode : str, detector_name :
 
     assert access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd"
      
-    if mode == "idx":
-        ps = PsanaImgSrc(exp, run, access_mode, detector_name)
-        start = time.time()
-        n = 0
-        mbyte = 0 # uncompressed
-        nbyte = 0 # sent
-        send_opts = {
-            "send_buffer_size": 32 # send blocks if 32 messages queue up
-        }
-        with Push0(dial=addr, **send_opts) as push:
-            for img in ps(mode):
-                buf = serialize(img)
-                n += 1
-                mbyte += img.nbytes
-                nbyte += len(buf)
-                push.send(buf)
-        t = time.time() - start
+    if access_mode == "idx":
+        mpi_pool_size = 3  # Hardcoding the mpi pool size for now
+        cmd=(f"psana_push.py -e {exp} -r {run} -d {detector_name} "
+             f"-m {mode} -a {addr} -c {access_mode}")
     else:
         mpi_pool_size = 3  # Hardcoding the mpi pool size for now
-        cmd=(f"mpirun -np {mpi_pool_size} mpi_psana.py -e {exp} "
-             f"-r {run} -d {detector_name} -m {mode} -a {addr}")
-        proc = Popen(cmd, shell=True)
-        proc.wait()
+        cmd=(f"mpirun -np {mpi_pool_size} psana_push.py -e {exp} "
+             f"-r {run} -d {detector_name} -m {mode} -a {addr} "
+             f"-c {access_mode}")
+    proc = Popen(cmd, shell=True)
+    proc.wait()
 
 
 async def send_experiment_async(exp : str,
