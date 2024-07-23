@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-from enum import Enum
+#!/usr/bin/env python3
+
 from typing import Annotated
 
 from pynng import Push0 # type: ignore[import-untyped]
@@ -7,22 +7,10 @@ import typer
 import zfpy # type: ignore[import-untyped]
 
 from lclstream.psana_img_src import PsanaImgSrc
+from lclstream.models import ImageRetrievalMode, AccessMode
 
 def serialize(data) -> bytes:
     return zfpy.compress_numpy(data, write_header=True)
-
-
-class ImageRetrievalMode(str, Enum):
-    raw = "raw"
-    calib = "calib"
-    image = "image"
-    mask = "mask"
-
-class AccessMode(str, Enum):
-    idx = "idx"
-    smd = "smd"
-
-
 
 def psana_push(
         experiment: Annotated[
@@ -43,7 +31,7 @@ def psana_push(
         ],    
         addr: Annotated[
             str,
-            typer.Option("--addr", "-a", help="Push socket base address"),
+            typer.Option("--addr", "-a", help="Destination address (URL format)."),
         ],
         access_mode: Annotated[
             AccessMode,
@@ -51,30 +39,19 @@ def psana_push(
         ],
 
 ):
-    ps = PsanaImgSrc(experiment, run, "smd", detector)
-
-    if access_mode == "smd":
-        from mpi4py import MPI
-
-        rank = MPI.COMM_WORLD.Get_rank()
-        addr_parts = addr.split(":")
-        base_curr_addr=":".join(addr_parts[0:-1])
-        baseport = int(addr_parts[-1])
-        curr_port = baseport + rank
-        curr_addr = f"{base_curr_addr}:{curr_port}"
-        ps = PsanaImgSrc(experiment, run, "smd", detector)
-    else:
-        curr_addr = addr
-        ps = PsanaImgSrc(experiment, run, "idx", detector)
+    ps = PsanaImgSrc(experiment, run, access_mode, detector)
 
     send_opts = {
         "send_buffer_size": 32 # send blocks if 32 messages queue up
     }
-    with Push0(dial=curr_addr, **send_opts) as push:
-        print(f"Starting push socket at {curr_addr}")
+    with Push0(dial=addr, **send_opts) as push:
+        print(f"Connected to {addr} - starting stream.")
         for img in ps(mode):
             buf = serialize(img)
             push.send(buf)
- 
-if __name__ == "__main__":
+
+def run():
     typer.run(psana_push)
+
+if __name__ == "__main__":
+    run()

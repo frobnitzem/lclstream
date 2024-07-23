@@ -1,4 +1,4 @@
-from pynng import Pull0
+from pynng import Pull0 # type: ignore[import-untyped]
 import click
 
 @click.command
@@ -24,4 +24,4 @@ def run_pull_sockets(mpi_rank_size, addr):
             print(f"Received message from {socket[1]}")
 
 if __name__ == "__main__":
-        run_pull_sockets()
+    run_pull_sockets()

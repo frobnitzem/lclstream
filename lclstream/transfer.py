@@ -6,9 +6,7 @@ import asyncio
 from pynng import Push0 # type: ignore[import-untyped]
 import zfpy # type: ignore[import-untyped]
 
-from .models import DataRequest
-from .psana_img_src import PsanaImgSrc
-
+from .models import DataRequest, AccessMode, ImageRetrievalMode
 
 def serialize(data) -> bytes: return zfpy.compress_numpy(data,
         write_header=True)
@@ -16,38 +14,30 @@ def serialize(data) -> bytes: return zfpy.compress_numpy(data,
 
 TransferStats = Tuple[int,float,float,float]
 
-def send_experiment(exp : str, run : int, access_mode : str, detector_name :
-        str, mode : str, addr : str) -> TransferStats:
+def send_experiment(req : DataRequest) -> TransferStats:
 
-    assert access_mode in ['idx', 'smd'], "Access mode should be one of: idx, smd"
+    mpi_pool_size = 3  # Hardcoding the mpi pool size for now
+
+    assert req.access_mode in [AccessMode.idx, AccessMode.smd], \
+            "Access mode should be one of: idx, smd"
      
-    if access_mode == "idx":
-        mpi_pool_size = 3  # Hardcoding the mpi pool size for now
-        cmd=(f"psana_push.py -e {exp} -r {run} -d {detector_name} "
-             f"-m {mode} -a {addr} -c {access_mode}")
-    else:
-        mpi_pool_size = 3  # Hardcoding the mpi pool size for now
-        cmd=(f"mpirun -np {mpi_pool_size} psana_push.py -e {exp} "
-             f"-r {run} -d {detector_name} -m {mode} -a {addr} "
-             f"-c {access_mode}")
-    proc = Popen(cmd, shell=True)
+    cmd = ["psana_push", "-e", req.exp,
+                         "-r", req.run,
+                         "-d", req.detector_name,
+                         "-m", req.mode.value,
+                         "-a", req.addr,
+                         "-c", access_mode.value]
+    if req.access_mode != AccessMode.idx:
+        cmd = ["mpirun", "-np", str(mpi_pool_size)] + cmd
+    proc = Popen(cmd)
     proc.wait()
+    return 1, 1.0, 1.0, 1.0
 
-
-async def send_experiment_async(exp : str,
-                                run : int,
-                                access_mode : str,
-                                detector_name : str,
-                                mode : str,
-                                addr : str) -> TransferStats:
+async def send_experiment_async(req : DataRequest) -> TransferStats:
     loop = asyncio.get_running_loop()
     # TODO: separate the executor into its own
     # module or use threads...
-    return await loop.run_in_executor(
-        None,
-        send_experiment,
-        exp, run, access_mode, detector_name, mode, addr
-    )
+    return await loop.run_in_executor(None, send_experiment, req)
 
 class Transfer:
     req   : DataRequest
@@ -62,13 +52,7 @@ class Transfer:
     async def run(self):
         self.state = "active"
         req = self.request
-        self.value = await send_experiment_async(
-            req.exp,
-            req.run,
-            req.access_mode,
-            req.detector_name,
-            req.mode,
-            req.addr )
+        self.value = await send_experiment_async(req)
         self.state = "completed"
 
     def start(self) -> bool:
