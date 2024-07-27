@@ -1,59 +1,43 @@
-from typing import Optional, List, Dict, Any, Awaitable, Tuple
+from subprocess import Popen
+from typing import Optional, List,Dict, Any, Awaitable, Tuple
 import time
 import asyncio
 
 from pynng import Push0 # type: ignore[import-untyped]
 import zfpy # type: ignore[import-untyped]
 
-from .models import DataRequest
-from .psana_img_src import PsanaImgSrc
+from .models import DataRequest, AccessMode, ImageRetrievalMode
 
-def serialize(data) -> bytes:
-    return zfpy.compress_numpy(data, write_header=True)
+def serialize(data) -> bytes: return zfpy.compress_numpy(data,
+        write_header=True)
     # inverse = zfpy.decompress_numpy(buf)
 
 TransferStats = Tuple[int,float,float,float]
 
-def send_experiment(exp : str,
-                    run : int,
-                    access_mode : str,
-                    detector_name : str,
-                    mode : str,
-                    addr : str) -> TransferStats:
-    ps = PsanaImgSrc(exp, run, access_mode, detector_name)
-    send_opts = {
-       "send_buffer_size": 32 # send blocks if 32 messages queue up
-    }
+def send_experiment(req : DataRequest) -> TransferStats:
 
-    start = time.time()
-    n = 0
-    mbyte = 0 # uncompressed
-    nbyte = 0 # sent
-    with Push0(dial=addr, **send_opts) as push:
-        for img in ps(mode):
-            buf = serialize(img)
-            n += 1
-            mbyte += img.nbytes
-            nbyte += len(buf)
-            push.send(buf)
-    t = time.time() - start
-    print(f"Sent {n} messages in {t} seconds: {nbyte/t/1024**2} MB/sec ({nbyte*100/mbyte}% compression).")
-    return (n, mbyte, nbyte, t)
+    mpi_pool_size = 3  # Hardcoding the mpi pool size for now
 
-async def send_experiment_async(exp : str,
-                                run : int,
-                                access_mode : str,
-                                detector_name : str,
-                                mode : str,
-                                addr : str) -> TransferStats:
+    assert req.access_mode in [AccessMode.idx, AccessMode.smd], \
+            "Access mode should be one of: idx, smd"
+     
+    cmd = ["psana_push", "-e", req.exp,
+                         "-r", req.run,
+                         "-d", req.detector_name,
+                         "-m", req.mode.value,
+                         "-a", req.addr,
+                         "-c", access_mode.value]
+    if req.access_mode != AccessMode.idx:
+        cmd = ["mpirun", "-np", str(mpi_pool_size)] + cmd
+    proc = Popen(cmd)
+    proc.wait()
+    return 1, 1.0, 1.0, 1.0
+
+async def send_experiment_async(req : DataRequest) -> TransferStats:
     loop = asyncio.get_running_loop()
     # TODO: separate the executor into its own
     # module or use threads...
-    return await loop.run_in_executor(
-        None,
-        send_experiment,
-        exp, run, access_mode, detector_name, mode, addr
-    )
+    return await loop.run_in_executor(None, send_experiment, req)
 
 class Transfer:
     req   : DataRequest
@@ -68,13 +52,7 @@ class Transfer:
     async def run(self):
         self.state = "active"
         req = self.request
-        self.value = await send_experiment_async(
-            req.exp,
-            req.run,
-            req.access_mode,
-            req.detector_name,
-            req.mode,
-            req.addr )
+        self.value = await send_experiment_async(req)
         self.state = "completed"
 
     def start(self) -> bool:

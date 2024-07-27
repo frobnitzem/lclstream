@@ -82,11 +82,12 @@ class StubDetector:
         raise NotImplementedError()
 
 try:
-    from psana import DataSource, Detector
+    from psana import DataSource, Detector, MPIDataSource
 except ImportError:
     import os
     if os.environ.get("RAND_PSANA", "0") == "1":
         DataSource = StubDataSource
         Detector = StubDetector
+        MPIDataSource = StubDataSource
     else:
         raise

@@ -1,16 +1,23 @@
+import asyncio
+
 from typing import List
 import pytest
 import os
 os.environ["RAND_PSANA"] = "1"
 
-from aiowire import EventLoop, Call
-from actor_api import ActorTest
+import pytest
+
+from fastapi.testclient import TestClient
 
 from lclstream.server import app
 from lclstream.transfer import Transfer
-from lclstream.models import DataRequest
+from lclstream.models import DataRequest, ImageRetrievalMode, AccessMode
 
 from pynng import Pull0, Timeout
+
+ADDR = "tcp://127.0.0.1:28451"
+
+client = TestClient(app)
 
 async def puller(addr):
     done = False
@@ -35,50 +42,48 @@ async def puller(addr):
                 continue
     print(f"pullz: received {n} messages")
 
+@pytest.fixture()
+def pull_server(event_loop):
+    task = asyncio.ensure_future(puller(ADDR), loop=event_loop)
+
+    # Sleeps to allow the server boot-up.
+    event_loop.run_until_complete(asyncio.sleep(0.1))
+
+    try:
+        yield
+    finally:
+        task.cancel()
+
+def test_get_list():
+    response = client.get("/transfers")
+    assert response.status_code == 200
+    resp = response.json()
+    assert isinstance(resp, list)
+
 @pytest.mark.asyncio
-async def test_get_list():
-    atest = ActorTest( { "lclstream": app } )
+async def test_mk_transfer(pull_server):
+    response = client.post("/transfers/new", json={"abc": 2})
+    assert response.status_code == 422
 
-    async def msg(*args):
-        return await atest.message("lclstream", *args)
+    trs = DataRequest(exp = "grail",
+                      run = 42,
+                      access_mode = AccessMode.idx,
+                      detector_name = "excalibur",
+                      mode = ImageRetrievalMode.image,
+                      addr = ADDR)
+    response = client.post("/transfers/new", json=trs.model_dump())
+    assert response.status_code == 200
+    tid = response.json()
+    assert isinstance(tid, int)
 
-    async def cb(eve):
-        response = await msg("list_transfers")
-        assert isinstance(response, list)
-
-    async with EventLoop(1.0) as eve:
-        eve.start( atest )
-        eve.start( cb )
-
-@pytest.mark.asyncio
-async def test_mk_transfer():
-    atest = ActorTest( { "lclstream": app } )
-    async def msg(*args):
-        return await atest.message("lclstream", *args)
-
-    addr = "inproc://pull_test"
-    async def cb(eve):
-        with pytest.raises(ValueError):
-            response = await msg("new_transfer", "abc", 42)
-
-        trs = DataRequest(exp = "grail",
-                          run = 42,
-                          access_mode = "swift",
-                          detector_name = "excalibur",
-                          mode = "image",
-                          addr = addr)
-        tid = await msg("new_transfer", trs)
-        assert isinstance(tid, int)
-
-        state = await msg("get_transfer", tid)
-        assert isinstance(state, str)
-        print(f"Transfer state = {state}")
+    response = client.get(f"/transfers/{tid}")
+    assert response.status_code == 200
+    state = response.json()
+    assert isinstance(state, str)
+    print(f"Transfer state = {state}")
     
-        ok = await msg("del_transfer", tid)
-        assert isinstance(ok, bool)
-        print(f"Delete transfer result = {ok}")
-
-    async with EventLoop(10.0) as eve:
-        eve.start( atest )
-        eve.start( Call(puller, addr) )
-        eve.start( cb )
+    response = client.post(f"/transfers/delete/{tid}")
+    assert response.status_code == 200
+    ok = response.json()
+    assert isinstance(ok, bool)
+    print(f"Delete transfer result = {ok}")
