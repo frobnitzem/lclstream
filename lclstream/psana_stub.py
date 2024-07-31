@@ -56,7 +56,7 @@ def symm(x):
 
 class StubRun:
     def times(self) -> List[float]:
-        return np.arange(20).tolist()
+        return np.arange(2000//10).tolist()
     def event(self, time : int) -> StubEvent:
         return StubEvent(1024, 1024, 'float32')
 
@@ -80,13 +80,10 @@ class StubDetector:
     def mask(self, run, **kws):
         raise NotImplementedError()
 
-try:
+import os
+if os.environ.get("RAND_PSANA", "0") == "1":
+    DataSource = StubDataSource
+    Detector = StubDetector
+    MPIDataSource = StubDataSource
+else:
     from psana import DataSource, Detector, MPIDataSource
-except ImportError:
-    import os
-    if os.environ.get("RAND_PSANA", "0") == "1":
-        DataSource = StubDataSource
-        Detector = StubDetector
-        MPIDataSource = StubDataSource
-    else:
-        raise

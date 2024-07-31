@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from pynng import Push0 # type: ignore[import-untyped]
+from pynng.exceptions import ConnectionRefused
 import typer
 import zfpy # type: ignore[import-untyped]
 
@@ -44,11 +45,18 @@ def psana_push(
     send_opts = {
         "send_buffer_size": 32 # send blocks if 32 messages queue up
     }
-    with Push0(dial=addr, **send_opts) as push:
-        print(f"Connected to {addr} - starting stream.")
-        for img in ps(mode):
-            buf = serialize(img)
-            push.send(buf)
+    try:
+        #with Push0(dial=addr, block=True, **send_opts) as push:
+        with Push0(**send_opts) as push:
+            push.dial(addr, block=True)
+            print(f"Connected to {addr} - starting stream.")
+            for img in ps(mode):
+                buf = serialize(img)
+                push.send(buf)
+        return 0
+    except ConnectionRefused as e:
+        print(f"Unable to connect to {addr} - {str(e)}.")
+        return 1
 
 def run():
     typer.run(psana_push)
