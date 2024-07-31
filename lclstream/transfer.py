@@ -4,13 +4,8 @@ import time
 import asyncio
 
 from pynng import Push0 # type: ignore[import-untyped]
-import zfpy # type: ignore[import-untyped]
 
 from .models import DataRequest, AccessMode, ImageRetrievalMode
-
-def serialize(data) -> bytes: return zfpy.compress_numpy(data,
-        write_header=True)
-    # inverse = zfpy.decompress_numpy(buf)
 
 TransferStats = Tuple[int,float,float,float]
 
@@ -21,14 +16,18 @@ def send_experiment(req : DataRequest) -> TransferStats:
     assert req.access_mode in [AccessMode.idx, AccessMode.smd], \
             "Access mode should be one of: idx, smd"
      
-    cmd = ["psana_push", "-e", req.exp,
-                         "-r", req.run,
-                         "-d", req.detector_name,
-                         "-m", req.mode.value,
-                         "-a", req.addr,
-                         "-c", access_mode.value]
-    if req.access_mode != AccessMode.idx:
-        cmd = ["mpirun", "-np", str(mpi_pool_size)] + cmd
+    if req.access_mode == AccessMode.idx:
+        cmd0 = ["psana_push"]
+    else:
+        cmd0 = ["ssh", "psana",
+                "/sdf/home/r/rogersdd/venvs/run_psana_push",
+                str(mpi_pool_size)]
+    cmd = cmd0 + [ "-e", req.exp,
+                   "-r", req.run,
+                   "-d", req.detector_name,
+                   "-m", req.mode.value,
+                   "-a", req.addr,
+                   "-c", access_mode.value]
     proc = Popen(cmd)
     proc.wait()
     return 1, 1.0, 1.0, 1.0

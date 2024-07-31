@@ -20,10 +20,6 @@ Manually run the server code with:
 
     poetry run uvicorn lclstream.server:app --reload
 
-or (mimicking deployment usage),
-
-    poetry run gunicorn --config gunicorn_config.py lclstream.server:app
-
 
 # Deployment Instructions
 
@@ -38,3 +34,7 @@ create a server keypair using instructions from
 Run the server with the `uvicorn` launch command
 above, but specifying the key and certificate files
 as explained there.
+
+    uvicorn --ssl-keyfile server.key --ssl-certfile server.pem \
+            --ssl-cert-reqs 1 --ssl-ca-certs ca_root.pem \
+            lclstream.server:app

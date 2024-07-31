@@ -1,5 +1,4 @@
-from collections.abc import Iterator
-from typing import List
+from typing import List, Iterator
 import numpy as np
 
 class StubEvent:
