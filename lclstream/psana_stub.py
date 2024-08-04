@@ -1,5 +1,4 @@
-from collections.abc import Iterator
-from typing import List
+from typing import List, Iterator
 import numpy as np
 
 class StubEvent:
@@ -56,8 +55,8 @@ def symm(x):
         x[mid+1:] = x[mid:0:-1].conj()
 
 class StubRun:
-    def times(self) -> List[float]:
-        return np.arange(20).tolist()
+    def times(self) -> List[int]:
+        return np.arange(2000//10).astype(int).tolist()
     def event(self, time : int) -> StubEvent:
         return StubEvent(1024, 1024, 'float32')
 
@@ -81,13 +80,10 @@ class StubDetector:
     def mask(self, run, **kws):
         raise NotImplementedError()
 
-try:
-    from psana import DataSource, Detector, MPIDataSource
-except ImportError:
-    import os
-    if os.environ.get("RAND_PSANA", "0") == "1":
-        DataSource = StubDataSource
-        Detector = StubDetector
-        MPIDataSource = StubDataSource
-    else:
-        raise
+import os
+if os.environ.get("RAND_PSANA", "0") == "1":
+    DataSource = StubDataSource
+    Detector = StubDetector
+    MPIDataSource = StubDataSource
+else:
+    from psana import DataSource, Detector, MPIDataSource # type: ignore[no-redef]

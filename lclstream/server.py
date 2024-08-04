@@ -3,10 +3,6 @@
 
 # run as:
 #
-#     ./server.py
-#
-# or
-#
 #     uvicorn --host localhost --port 5001 lclstream.server:app
 #
 
@@ -14,37 +10,28 @@ from typing import Dict, List
 import asyncio
 import signal
 
-from .psana_img_src import PsanaImgSrc
+from fastapi import FastAPI, HTTPException
+
 from .transfer import Transfer
 from .models import DataRequest
 
-from fastapi import FastAPI, HTTPException #, Response
-
-# ___/ ASYNC CONFIG \___
-app = FastAPI()
-
-from concurrent.futures import ProcessPoolExecutor
-# Initialize the executor with no specific number of workers
-executor = ProcessPoolExecutor() #max_workers=4)
-
-# Cleanup function to ensure executor shutdown
+# Cleanup function
 def cleanup():
-    executor.shutdown(wait=True)
-    print("Executor has been shut down gracefully")
+    pass
+
+# Additional signal handling for manual interruption
+def handle_exit(sig, frame):
+    cleanup()
+
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
+
+app = FastAPI()
 
 # Register cleanup with FastAPI shutdown event
 @app.on_event("shutdown")
 def shutdown_event():
     cleanup()
-
-# Additional signal handling for manual interruption
-def handle_exit(sig, frame):
-    cleanup()
-    asyncio.get_event_loop().stop()
-    print("Signal received, shutting down.")
-
-signal.signal(signal.SIGINT, handle_exit)
-signal.signal(signal.SIGTERM, handle_exit)
 
 @app.get('/')
 async def list_experiments() -> List[str]:

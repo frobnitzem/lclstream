@@ -6,7 +6,7 @@ import numpy as np
 from .psana_stub import DataSource, MPIDataSource, Detector
 from .models import AccessMode, ImageRetrievalMode
 
-EventImage = Union[dict[int,np.ndarray], np.ndarray]
+EventImage = np.ndarray
 
 class PsanaImgSrc:
     """
@@ -25,7 +25,8 @@ class PsanaImgSrc:
             self.events        = self.run_current.times()
         else:
             self.datasource    = MPIDataSource(self.datasource_id )
-            self.events        = self.datasource.events()
+            self.run_current   = next(self.datasource.runs())
+            self.events        = self.datasource.times() #events()
             
         # Set up detector
         self.detector = Detector(detector_name)
@@ -40,7 +41,7 @@ class PsanaImgSrc:
         return len(self.events)
 
     def __call__(self, mode : ImageRetrievalMode, id_panel = None) -> Iterable[EventImage]:
-        # Only two modes are supported...
+        # Only these modes are supported...
         assert mode in (ImageRetrievalMode.raw,
                         ImageRetrievalMode.calib,
                         ImageRetrievalMode.image), \

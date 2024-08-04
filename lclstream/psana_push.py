@@ -1,46 +1,54 @@
 #!/usr/bin/env python3
 
 from io import BytesIO
-from typing import Annotated
+from typing import Annotated, Iterable
 
 from pynng import Push0 # type: ignore[import-untyped]
-import h5py
-import hdf5plugin
+from pynng.exceptions import ConnectionRefused # type: ignore[import-untyped]
+
+import numpy as np
+import h5py # type: ignore[import-untyped]
+import hdf5plugin # type: ignore[import-untyped]
 import typer
 
 from lclstream.models import ImageRetrievalMode, AccessMode
 from lclstream.psana_img_src import PsanaImgSrc
 
-
 class Hdf5FileWriter:
+    """ This class sets up a writer for in-memory
+        hdf5-format files.
 
-    def __init__(self, num_img_in_file):
-        self._num_img_in_file = num_img_in_file
-        self._new_file_reqrd = True
-        self._dataset = None
+        FIXME: this class may discard images
+        at the end of an experiment run (due
+        to fixed img_per_file rounding).
+    """
 
-    def add_img_to_file(self, img):
-        if self._new_file_reqrd:
-            self._bytes_buffer = BytesIO()
-            self._fh = h5py.File(self._bytes_buffer, 'w')
-            self._dataset = self._fh.create_dataset(
-                'data',
-                shape=(self._num_img_in_file,) + img.shape,
-                **hdf5plugin.Zfp()
-            )
-            self._new_file_reqrd = False
-            self._idx_img_to_write = 0
+    def __init__(self, img_per_file : int) -> None:
+        self.img_per_file = img_per_file
 
-        self._dataset[self._idx_img_to_write] = img
-        self._idx_img_to_write += 1
-        
-        if self._idx_img_to_write == self._num_img_in_file:
-            # Returns the bytes buffer if the file is full, otherwise None
-            self._new_file_reqrd = True
-            return self._bytes_buffer
-        else:
-            return None
-         
+    def __call__(self, src : Iterable[np.ndarray]) -> Iterable[bytes]:
+        """
+        Returns an iterator over serialized hdf5 bytes.
+        Each value yielded contains img_per_file images.
+
+        Args:
+            src: iterator over image arrays
+        """
+        while True:
+            img = next(src)
+
+            with BytesIO() as buffer:
+                with h5py.File(buffer, 'w') as fh:
+                    dataset = fh.create_dataset(
+                        'data',
+                        shape = (self.img_per_file,) + img.shape,
+                        **hdf5plugin.Zfp()
+                    )
+                    dataset[0] = img
+                    for idx in range(1, self.img_per_file):
+                        dataset[idx] = next(src)
+
+                yield buffer.read()
 
 def psana_push(
         experiment: Annotated[
@@ -67,24 +75,30 @@ def psana_push(
             AccessMode,
             typer.Option("--access_mode", "-c", help="Data access mode"),
         ],
-
-):
+        img_per_file: Annotated[
+            int,
+            typer.Option("--img_per_file", "-n", help="Number of images per file"),
+        ] = 20,
+    ):
     ps = PsanaImgSrc(experiment, run, access_mode, detector)
 
-    #send_opts = {
-    #    "send_buffer_size": 32 # send blocks if 32 messages queue up
-    #}
-    with Push0(dial=addr) as push:
-        print(f"Connected to {addr} - starting stream.")
-         
-        num_img_per_file = 20 # Hardcoded for now
+    send_opts : dict[str,int] = {
+        #"send_buffer_size": 32 # send blocks if 32 messages queue up
+    }
+    try:
+        #with Push0(dial=addr, block=True, **send_opts) as push:
+        with Push0(**send_opts) as push:
+            push.dial(addr, block=True)
+            print(f"Connected to {addr} - starting stream.")
 
-        file_writer = Hdf5FileWriter(num_img_per_file)
+            file_writer = Hdf5FileWriter(img_per_file)
+            for msg in file_writer( ps(mode) ):
+                push.send(msg)
+    except ConnectionRefused as e:
+        print(f"Unable to connect to {addr} - {str(e)}.")
+        return 1
 
-        for img in ps(mode):
-            bytes_to_send = file_writer.add_img_to_file(img)
-            if bytes_to_send:
-                push.send(bytes_to_send.read())
+    return 0
 
 def run():
     typer.run(psana_push)
