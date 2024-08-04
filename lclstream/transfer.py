@@ -16,17 +16,17 @@ TransferStats = Tuple[int,float,float,float]
 
 def send_experiment(req : DataRequest) -> TransferStats:
 
-    mpi_pool_size = 3  # Hardcoding the mpi pool size for now
+    mpi_pool_size = 1  # Hardcoding the mpi pool size for now
 
     assert req.access_mode in [AccessMode.idx, AccessMode.smd], \
             "Access mode should be one of: idx, smd"
      
     cmd = ["psana_push", "-e", req.exp,
-                         "-r", req.run,
+                         "-r", str(req.run),
                          "-d", req.detector_name,
-                         "-m", req.mode.value,
+                         "-m", req.mode,
                          "-a", req.addr,
-                         "-c", access_mode.value]
+                         "-c", req.access_mode]
     if req.access_mode != AccessMode.idx:
         cmd = ["mpirun", "-np", str(mpi_pool_size)] + cmd
     proc = Popen(cmd)
