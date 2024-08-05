@@ -11,6 +11,7 @@ readme = "README.md"
 
 [tool.poetry.scripts]
 psana_push = "lclstream.psana_push:run"
+psana_pull = "lclstream.psana_pull:run"
 
 [tool.poetry.dependencies]
 python = ">=3.9"
