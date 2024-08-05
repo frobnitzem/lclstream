@@ -14,6 +14,14 @@ import typer
 from lclstream.models import ImageRetrievalMode, AccessMode
 from lclstream.psana_img_src import PsanaImgSrc
 
+try:
+    from mpi4py import MPI
+    rank  = MPI.COMM_WORLD.Get_rank()
+    procs = MPI.COMM_WORLD.Get_size()
+except:
+    rank = 0
+    procs = 1
+
 class Hdf5FileWriter:
     """ This class sets up a writer for in-memory
         hdf5-format files.
@@ -37,8 +45,8 @@ class Hdf5FileWriter:
         while True:
             img = next(src)
 
-            with BytesIO() as buffer:
-                with h5py.File(buffer, 'w') as fh:
+            with BytesIO() as f:
+                with h5py.File(f, 'w') as fh:
                     dataset = fh.create_dataset(
                         'data',
                         shape = (self.img_per_file,) + img.shape,
@@ -48,7 +56,7 @@ class Hdf5FileWriter:
                     for idx in range(1, self.img_per_file):
                         dataset[idx] = next(src)
 
-                yield buffer.read()
+                yield f.read()
 
 def psana_push(
         experiment: Annotated[
@@ -89,13 +97,13 @@ def psana_push(
         #with Push0(dial=addr, block=True, **send_opts) as push:
         with Push0(**send_opts) as push:
             push.dial(addr, block=True)
-            print(f"Connected to {addr} - starting stream.")
+            print(f"{rank}: Connected to {addr} - starting stream.")
 
             file_writer = Hdf5FileWriter(img_per_file)
             for msg in file_writer( ps(mode) ):
                 push.send(msg)
     except ConnectionRefused as e:
-        print(f"Unable to connect to {addr} - {str(e)}.")
+        print(f"{rank}: Unable to connect to {addr} - {str(e)}.")
         return 1
 
     return 0

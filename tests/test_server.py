@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from lclstream.server import app
 from lclstream.transfer import Transfer
 from lclstream.models import DataRequest, ImageRetrievalMode, AccessMode
+from lclstream.psana_pull import puller
 
 from pynng import Pull0, Timeout
 
@@ -19,32 +20,16 @@ ADDR = "tcp://127.0.0.1:28451"
 
 client = TestClient(app)
 
-async def puller(addr):
-    done = False
-
-    def show_open(pipe):
-        print("pullz: pipe opened")
-
-    def show_close(pipe):
-        nonlocal done
-        print("pullz: pipe closed")
-        done = True
-
-    n = 0
-    with Pull0(listen=addr, recv_timeout=100) as pull:
-        while not done:
-            try:
-                b = await pull.arecv()
-                n += 1
-            except Timeout:
-                if not done:
-                    print("pullz: waiting for data")
-                continue
-    print(f"pullz: received {n} messages")
-
 @pytest.fixture()
 def pull_server(event_loop):
-    task = asyncio.ensure_future(puller(ADDR), loop=event_loop)
+    async def run_pull(pull):
+        nmsg = 0
+        async for data in pull:
+            nmsg += 1
+        print(f"pull_server: received {nmsg} messages")
+
+    P = puller(ADDR)
+    task = asyncio.ensure_future(run_pull(P), loop=event_loop)
 
     # Sleeps to allow the server boot-up.
     event_loop.run_until_complete(asyncio.sleep(0.1))
