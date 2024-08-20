@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import Union
+from typing import Union, Optional, Tuple
 
 import numpy as np
 
@@ -19,43 +19,80 @@ class PsanaImgSrc:
         # Set up data source
         self.access_mode = access_mode
         self.datasource_id = f"exp={exp}:run={run}:{access_mode.value}"
+        self._runs : Optional[list] = None
+        # list of psana.Run
+        self.run_times : dict[int,list] = {}
+        # list of psana.EventTime
+
         if self.access_mode == AccessMode.idx:
-            self.datasource    = DataSource(self.datasource_id )
-            self.run_current   = next(self.datasource.runs())
-            self.events        = self.run_current.times()
+            self.datasource = DataSource(self.datasource_id )
         else:
-            self.datasource    = MPIDataSource(self.datasource_id )
-            self.run_current   = next(self.datasource.runs())
-            self.events        = self.datasource.times() #events()
-            
+            self.datasource = MPIDataSource(self.datasource_id )
+
         # Set up detector
-        self.detector = Detector(detector_name)
+        #self.detector = Detector(detector_name)
+        self.detector = Detector(detector_name,
+                                 self.datasource.env())
 
         # Set image reading mode
-        self.read = { "raw"   : self.detector.raw,
-                      "calib" : self.detector.calib,
-                      "image" : self.detector.image,
-                      "mask"  : self.detector.mask, }
+        self.read = { ImageRetrievalMode.raw   : self.detector.raw,
+                      ImageRetrievalMode.calib : self.detector.calib,
+                      ImageRetrievalMode.image : self.detector.image,
+                      ImageRetrievalMode.mask  : self.detector.mask, }
 
-    def __len__(self) -> int:
-        return len(self.events)
-
-    def __call__(self, mode : ImageRetrievalMode, id_panel = None) -> Iterable[EventImage]:
+    def __call__(self,
+                 mode : ImageRetrievalMode,
+                 id_panel : Optional[int] = None) -> Iterable[EventImage]:
         # Only these modes are supported...
         assert mode in (ImageRetrievalMode.raw,
                         ImageRetrievalMode.calib,
                         ImageRetrievalMode.image), \
                 f"Mode {mode.value} is not allowed!!!  Only 'raw', 'calib' and 'image' are supported."
 
-        for event in self.events:
-            if self.access_mode == AccessMode.idx:
-                event_data = self.run_current.event(event)
-            else:
-                event_data = event
-            data = self.read[mode](event_data)
+        read = self.read[mode]
+        if id_panel is not None:
+            read = lambda evt: self.read[mode](evt)[id_panel]
+
+        # MPIDataSource (but not DataSource) provides small_data
+        #smldata = self.datasource.small_data('my.h5')
+        if self.access_mode == AccessMode.idx:
+            #g = self.runs[0].events()
+            g = map(self.event, range(len(self)))
+        else:
+            g = self.datasource.events()
+
+        for evt in g:
             # assembling a multi-panel image:
-            #img = self.read[mode](event, multipanel)
-            yield data[int(id_panel)] if id_panel is not None else data
+            #img = read(evt, multipanel)
+            data = read(evt)
+            #smldata.append( cspad_mean = f(data) )
+            yield data
+
+    @property
+    def runs(self) -> list:
+        assert self.access_mode == AccessMode.idx
+        if self._runs is None:
+            self._runs = list(self.datasource.runs())
+        return self._runs
+
+    def event(self, idx : Union[int,Tuple[int,int]]):
+        # TODO: allow slicing when, e.g. idx = slice(start,stop)
+        if isinstance(idx, tuple):
+            r, i = idx
+        else:
+            r = 0
+            i = idx
+        if r not in self.run_times:
+            self.run_times[r] = self.runs[r].times()
+
+        t = self.run_times[r][i]
+        return self.runs[r].event(t)
+    
+    def __len__(self):
+        assert self.access_mode == AccessMode.idx
+        if 0 not in self.run_times:
+            self.run_times[0] = self.runs[0].times()
+        return len(self.run_times[0])
 
     def create_bad_pixel_mask(self):
         return self.read["mask"](self.run_current, calib       = True,
