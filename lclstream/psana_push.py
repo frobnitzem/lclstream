@@ -11,8 +11,17 @@ import h5py # type: ignore[import-untyped]
 import hdf5plugin # type: ignore[import-untyped]
 import typer
 
-from lclstream.models import ImageRetrievalMode, AccessMode
-from lclstream.psana_img_src import PsanaImgSrc
+from models import ImageRetrievalMode, AccessMode
+from psana_img_src import PsanaImgSrc
+import time
+import json
+
+import os
+
+# Get the rank (process ID) from the environment variable
+rank = int(os.environ.get('OMPI_COMM_WORLD_RANK', '0'))
+# print("rank", rank)
+
 
 class Hdf5FileWriter:
     """ This class sets up a writer for in-memory
@@ -25,6 +34,8 @@ class Hdf5FileWriter:
 
     def __init__(self, img_per_file : int) -> None:
         self.img_per_file = img_per_file
+        self.times = []
+        self.gb_s = []
 
     def __call__(self, src : Iterable[np.ndarray]) -> Iterable[bytes]:
         """
@@ -36,7 +47,8 @@ class Hdf5FileWriter:
         """
         while True:
             img = next(src)
-
+            start = time.time()
+            img_bytes = img.nbytes
             with BytesIO() as buffer:
                 with h5py.File(buffer, 'w') as fh:
                     dataset = fh.create_dataset(
@@ -46,8 +58,17 @@ class Hdf5FileWriter:
                     )
                     dataset[0] = img
                     for idx in range(1, self.img_per_file):
+                        img_bytes+=next(src).nbytes
                         dataset[idx] = next(src)
+                end = time.time()
+                execution_time = end-start
+                self.times.append(execution_time)
 
+                # breakpoint()
+                
+                byte_len = len(buffer.getvalue())
+                bytes_per_sec = byte_len/execution_time
+                self.gb_s.append(bytes_per_sec/1000000000)
                 yield buffer.read()
 
 def psana_push(
@@ -78,22 +99,32 @@ def psana_push(
         img_per_file: Annotated[
             int,
             typer.Option("--img_per_file", "-n", help="Number of images per file"),
-        ] = 20,
+        ] = 10,
     ):
     ps = PsanaImgSrc(experiment, run, access_mode, detector)
-
     send_opts : dict[str,int] = {
         #"send_buffer_size": 32 # send blocks if 32 messages queue up
     }
     try:
         #with Push0(dial=addr, block=True, **send_opts) as push:
-        with Push0(**send_opts) as push:
-            push.dial(addr, block=True)
-            print(f"Connected to {addr} - starting stream.")
+        # with Push0(**send_opts) as push:
+        #     push.dial(addr, block=True)
+        #     print(f"Connected to {addr} - starting stream.")
 
-            file_writer = Hdf5FileWriter(img_per_file)
-            for msg in file_writer( ps(mode) ):
-                push.send(msg)
+        file_writer = Hdf5FileWriter(img_per_file)
+        i = 0
+        for msg in file_writer( ps(mode) ):
+            # push.send(msg)
+            i+=1
+            if rank==0:
+                print(i)
+            if i==50:
+                break
+            else:
+                pass
+        with open('/sdf/home/m/mavaylon/lclstream_test/output_'+str(rank)+'.json', 'w') as f:
+            json.dump(file_writer.gb_s, f)
+            # json.dump(file_writer.times, f)
     except ConnectionRefused as e:
         print(f"Unable to connect to {addr} - {str(e)}.")
         return 1

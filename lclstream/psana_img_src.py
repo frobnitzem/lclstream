@@ -3,8 +3,8 @@ from typing import Union
 
 import numpy as np
 
-from .psana_stub import DataSource, MPIDataSource, Detector
-from .models import AccessMode, ImageRetrievalMode
+from psana import DataSource, MPIDataSource, Detector
+from models import AccessMode, ImageRetrievalMode
 
 EventImage = np.ndarray
 
@@ -25,8 +25,7 @@ class PsanaImgSrc:
             self.events        = self.run_current.times()
         else:
             self.datasource    = MPIDataSource(self.datasource_id )
-            self.run_current   = next(self.datasource.runs())
-            self.events        = self.datasource.times() #events()
+            self.events        = self.datasource.events()
             
         # Set up detector
         self.detector = Detector(detector_name)
