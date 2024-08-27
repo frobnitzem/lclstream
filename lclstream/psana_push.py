@@ -46,8 +46,10 @@ class Hdf5FileWriter:
             src: iterator over image arrays
         """
         while True:
-            img = next(src)
             start = time.time()
+            # DEBUG: To try with random data, uncomment the next line and comment the one after that
+            #img = np.random.random_sample((16, 352, 384)).astype(np.float32)
+            img = next(src)
             img_bytes = img.nbytes
             with BytesIO() as buffer:
                 with h5py.File(buffer, 'w') as fh:
@@ -58,14 +60,17 @@ class Hdf5FileWriter:
                     )
                     dataset[0] = img
                     for idx in range(1, self.img_per_file):
+                        # DEBUG: To try with random data, uncomment the next two lines and comment the one after that
+                        #img = np.random.random_sample((16, 352, 384)).astype(np.float32)
+                        #img_bytes+=img.nbytes
                         img_bytes+=next(src).nbytes
                         dataset[idx] = next(src)
                 end = time.time()
                 execution_time = end-start
                 self.times.append(execution_time)
 
-                # breakpoint()
-                
+                # DEBUG: To try with random data, uncomment the next line and comment the one after that
+                # byte_len=img_bytes 
                 byte_len = len(buffer.getvalue())
                 bytes_per_sec = byte_len/execution_time
                 self.gb_s.append(bytes_per_sec/1000000000)
@@ -116,13 +121,13 @@ def psana_push(
         for msg in file_writer( ps(mode) ):
             # push.send(msg)
             i+=1
-            if rank==0:
-                print(i)
+#            if rank==0:
+#                print(i)
             if i==50:
                 break
             else:
                 pass
-        with open('/sdf/home/m/mavaylon/lclstream_test/output_'+str(rank)+'.json', 'w') as f:
+        with open('./output_'+str(rank)+'.json', 'w') as f:
             json.dump(file_writer.gb_s, f)
             # json.dump(file_writer.times, f)
     except ConnectionRefused as e:
