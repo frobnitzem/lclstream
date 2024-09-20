@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 from io import BytesIO
-from typing import Annotated, Iterable
+from typing import Annotated, List
+from collections.abc import Iterable, Iterator
+
+import stream
 
 from pynng import Push0 # type: ignore[import-untyped]
 from pynng.exceptions import ConnectionRefused # type: ignore[import-untyped]
@@ -11,9 +14,11 @@ import h5py # type: ignore[import-untyped]
 import hdf5plugin # type: ignore[import-untyped]
 import typer
 
-from lclstream.models import ImageRetrievalMode, AccessMode
-from lclstream.psana_img_src import PsanaImgSrc
+from .models import ImageRetrievalMode, AccessMode
+from .psana_img_src import PsanaImgSrc
+from .nng import pusher, rate_clock, clock0
 
+"""
 try:
     from mpi4py import MPI
     rank  = MPI.COMM_WORLD.Get_rank()
@@ -21,42 +26,31 @@ try:
 except:
     rank = 0
     procs = 1
+"""
 
-class Hdf5FileWriter:
-    """ This class sets up a writer for in-memory
-        hdf5-format files.
+Tensor = np.ndarray # type alias
 
-        FIXME: this class may discard images
-        at the end of an experiment run (due
-        to fixed img_per_file rounding).
+def Hdf5FileWriter(ilist: List[Tensor]) -> bytes:
+    """ This creates an in-memory hdf5-format file.
+
+    Returns a serialized hdf5 (bytes)  containing several images.
+
+    Params:
+        ilist: list of image arrays, all the same shape
     """
+    if len(ilist) == 0:
+        return b'' # return h5py.File() with no dataset?
+    with BytesIO() as f:
+        with h5py.File(f, 'w') as fh:
+            dataset = fh.create_dataset(
+                'data',
+                shape = (len(ilist),) + ilist[0].shape,
+                **hdf5plugin.Zfp()
+            )
+            for idx, img in enumerate(ilist):
+                dataset[idx] = img
 
-    def __init__(self, img_per_file : int) -> None:
-        self.img_per_file = img_per_file
-
-    def __call__(self, src : Iterable[np.ndarray]) -> Iterable[bytes]:
-        """
-        Returns an iterator over serialized hdf5 bytes.
-        Each value yielded contains img_per_file images.
-
-        Args:
-            src: iterator over image arrays
-        """
-        while True:
-            img = next(src)
-
-            with BytesIO() as f:
-                with h5py.File(f, 'w') as fh:
-                    dataset = fh.create_dataset(
-                        'data',
-                        shape = (self.img_per_file,) + img.shape,
-                        **hdf5plugin.Zfp()
-                    )
-                    dataset[0] = img
-                    for idx in range(1, self.img_per_file):
-                        dataset[idx] = next(src)
-
-                yield f.read()
+        return f.read()
 
 def psana_push(
         experiment: Annotated[
@@ -90,21 +84,19 @@ def psana_push(
     ):
     ps = PsanaImgSrc(experiment, run, access_mode, detector)
 
-    send_opts : dict[str,int] = {
-        #"send_buffer_size": 32 # send blocks if 32 messages queue up
-    }
-    try:
-        #with Push0(dial=addr, block=True, **send_opts) as push:
-        with Push0(**send_opts) as push:
-            push.dial(addr, block=True)
-            print(f"{rank}: Connected to {addr} - starting stream.")
+    messages = ps(mode) >> stream.chop(img_per_file) >> stream.map(Hdf5FileWriter) # iterator over hdf5 bytes
 
-            file_writer = Hdf5FileWriter(img_per_file)
-            for msg in file_writer( ps(mode) ):
-                push.send(msg)
-    except ConnectionRefused as e:
-        print(f"{rank}: Unable to connect to {addr} - {str(e)}.")
-        return 1
+    stats = messages >> pusher(addr, 1) \
+          >> stream.fold(rate_clock, clock0())
+    # TODO: update tqdm progress meter
+    for items in stats >> stream.item[1::32]:
+        print(f"At {items['count']} messages in {items['wait']} seconds: {items['size']/items['wait']/1024**2} MB/sec.")
+    try:
+        final = stats >> stream.last(-1)
+    except IndexError:
+        final = items
+    # {'count': 0, 'size': 0, 'wait': 0, 'time': time.time()}
+    print(f"Sent {final['count']} messages in {final['wait']} seconds: {final['size']/final['wait']/1024**2} MB/sec.")
 
     return 0
 
