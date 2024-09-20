@@ -84,13 +84,13 @@ def psana_push(
     ):
     ps = PsanaImgSrc(experiment, run, access_mode, detector)
 
-    messages = ps(mode) >> stream.chunk(img_per_file) >> stream.map(Hdf5FileWriter) # iterator over hdf5 bytes
+    messages = ps(mode) >> stream.chop(img_per_file) >> stream.map(Hdf5FileWriter) # iterator over hdf5 bytes
 
     stats = messages >> pusher(addr, 1) \
           >> stream.fold(rate_clock, clock0())
     # TODO: update tqdm progress meter
-    for items in stats: # >> item[::10]:
-        print(items)
+    for items in stats >> stream.item[1::32]:
+        print(f"At {items['count']} messages in {items['wait']} seconds: {items['size']/items['wait']/1024**2} MB/sec.")
     try:
         final = stats >> stream.last(-1)
     except IndexError:

@@ -34,7 +34,7 @@ def psana_pull(
     clock = stream.fold(rate_clock, clock0())
     stats = puller(addr, ndial) >> stream.map(len) >> clock
     # TODO: update tqdm progress meter
-    for items in stats >> item[::32]:
+    for items in stats >> stream.item[1::10]:
         #print(items)
         print(f"At {items['count']}, {items['wait']} seconds: {items['size']/items['wait']/1024**2} MB/sec.")
     try:
